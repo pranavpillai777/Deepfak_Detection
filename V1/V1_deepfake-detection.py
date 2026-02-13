@@ -9,7 +9,7 @@ while True:
     diff = cv2.absdiff(gray1, gray2)
     blur = cv2.GaussianBlur(diff, (5, 5), 0)
     _, thresh = cv2.threshold(blur, 25, 255, cv2.THRESH_BINARY)
-    dilated = cv2.dilategit(thresh, None, iterations=3)
+    dilated = cv2.dilate(thresh, None, iterations=3)
     contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     for contour in contours:
         if cv2.contourArea(contour) < 1000:
