@@ -1,0 +1,99 @@
+import cv2
+import numpy as np
+from collections import OrderedDict
+from scipy.spatial import distance as dist
+
+class CentroidTracker:
+    def __init__(self, maxDisappeared=20):
+        self.nextID = 0
+        self.objects = OrderedDict()
+        self.disappeared = OrderedDict()
+        self.maxDisappeared = maxDisappeared
+
+    def register(self, centroid):
+        self.objects[self.nextID] = centroid
+        self.disappeared[self.nextID] = 0
+        self.nextID += 1
+
+    def deregister(self, objectID):
+        del self.objects[objectID]
+        del self.disappeared[objectID]
+
+    def update(self, rects):
+        if len(rects) == 0:
+            for objectID in list(self.disappeared.keys()):
+                self.disappeared[objectID] += 1
+                if self.disappeared[objectID] > self.maxDisappeared:
+                    self.deregister(objectID)
+            return self.objects
+
+        inputCentroids = np.zeros((len(rects), 2), dtype="int")
+        for (i, (x, y, w, h)) in enumerate(rects):
+            inputCentroids[i] = (x + w // 2, y + h // 2)
+
+        if len(self.objects) == 0:
+            for c in inputCentroids:
+                self.register(c)
+        else:
+            objectIDs = list(self.objects.keys())
+            objectCentroids = list(self.objects.values())
+            D = dist.cdist(np.array(objectCentroids), inputCentroids)
+            rows = D.min(axis=1).argsort()
+            cols = D.argmin(axis=1)[rows]
+
+            usedRows, usedCols = set(), set()
+            for (row, col) in zip(rows, cols):
+                if row in usedRows or col in usedCols:
+                    continue
+                objectID = objectIDs[row]
+                self.objects[objectID] = inputCentroids[col]
+                self.disappeared[objectID] = 0
+                usedRows.add(row)
+                usedCols.add(col)
+
+            unusedRows = set(range(D.shape[0])) - usedRows
+            unusedCols = set(range(D.shape[1])) - usedCols
+
+            for row in unusedRows:
+                self.disappeared[objectIDs[row]] += 1
+                if self.disappeared[objectIDs[row]] > self.maxDisappeared:
+                    self.deregister(objectIDs[row])
+
+            for col in unusedCols:
+                self.register(inputCentroids[col])
+
+        return self.objects
+
+
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+tracker = CentroidTracker(maxDisappeared=20)
+
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+if not cap.isOpened():
+    print("Error: Could not open webcam.")
+    exit()
+
+print("Face Tracker Started. Press 'q' to quit.")
+
+while True:
+    ret, frame = cap.read()
+    if not ret or frame is None:
+        print("Warning: Empty frame received.")
+        continue
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+
+    tracker.update(faces)
+
+    for (x, y, w, h) in faces:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+
+    cv2.imshow("Face Tracker", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
